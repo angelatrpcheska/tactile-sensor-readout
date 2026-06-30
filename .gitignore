@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Measurement outputs
+noise_test_*/
+thesis_noise/
+*.npz
+*.csv
+*.png
+
+# macOS / editor
+.DS_Store
+.vscode/
+.idea/
