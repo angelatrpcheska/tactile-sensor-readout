@@ -7,6 +7,9 @@ venv/
 # Measurement outputs
 noise_test_*/
 thesis_noise/
+tactile_snapshots_iou/
+tactile_snapshots/
+iou_dice_results/
 *.npz
 *.csv
 *.png
