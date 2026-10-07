@@ -5,6 +5,7 @@ import numpy as np
 import cv2
 import time
 import threading
+from pathlib import Path
 
 NUM_COLS = 32
 NUM_ROWS = 12
@@ -271,6 +272,11 @@ def matrix_to_image(
     received_fps=0.0,
     show_values=False,
     show_header=False,
+    baseline_matrix=None,
+    raw_vmin=1900.0,
+    raw_vmax=4050.0,
+    signal_vmax=2100.0,
+    display_threshold=250.0,
 ):
     """
     matrix shape from STM32: [column][row] = 32x12
@@ -279,7 +285,36 @@ def matrix_to_image(
 
     # STM32 sends [column][row] = 32x12. Transpose to display as 12x32,
     # then flip left<->right.
-    display = np.fliplr(matrix.T).astype(np.float32)
+    raw_display = np.fliplr(matrix.T).astype(np.float32)
+
+    if baseline_matrix is not None:
+        baseline_display = np.fliplr(
+            baseline_matrix.T
+        ).astype(np.float32)
+
+        # Signed taxel-wise response. Keep this unfiltered for statistics and
+        # value labels; only the colour image is thresholded.
+        display = raw_display - baseline_display
+
+        # Contact is expected to increase the ADC value.
+        positive_signal = np.clip(display, 0.0, None)
+
+        # Suppress weak responses only in the visualized heatmap.
+        color_values = np.where(
+            positive_signal >= display_threshold,
+            positive_signal,
+            0.0,
+        )
+
+        fixed_vmin = 0.0
+        fixed_vmax = signal_vmax
+        display_mode = "delta"
+    else:
+        display = raw_display
+        color_values = raw_display
+        fixed_vmin = raw_vmin
+        fixed_vmax = raw_vmax
+        display_mode = "raw"
 
     rows, cols = display.shape
 
@@ -291,16 +326,23 @@ def matrix_to_image(
     grid_w = cols * cell_w
     grid_h = rows * cell_h
 
-    # Normalize for color
+    # Normalize for colour.
     if dynamic:
-        mn = display.min()
-        mx = display.max()
+        mn = float(color_values.min())
+        mx = float(color_values.max())
         if mx > mn:
-            norm = (display - mn) * 255.0 / (mx - mn)
+            norm = (color_values - mn) * 255.0 / (mx - mn)
         else:
-            norm = np.zeros_like(display)
+            norm = np.zeros_like(color_values)
     else:
-        norm = display * 255.0 / 4095.0
+        if fixed_vmax <= fixed_vmin:
+            raise ValueError("Display maximum must be larger than display minimum.")
+
+        norm = (
+            (color_values - fixed_vmin)
+            * 255.0
+            / (fixed_vmax - fixed_vmin)
+        )
 
     norm = np.clip(norm, 0, 255).astype(np.uint8)
 
@@ -322,13 +364,16 @@ def matrix_to_image(
         
         if counter is None:
             title = (
-                f"recv={received_fps:.1f} Hz  disp={display_fps:.1f} Hz  "
-                f"min={int(display.min())}  max={int(display.max())}  mean={display.mean():.1f}"
+                f"mode={display_mode}  recv={received_fps:.1f} Hz  "
+                f"disp={display_fps:.1f} Hz  min={int(display.min())}  "
+                f"max={int(display.max())}  mean={display.mean():.1f}"
             )
         else:
             title = (
-                f"frame={counter}  recv={received_fps:.1f} Hz  disp={display_fps:.1f} Hz  "
-                f"min={int(display.min())}  max={int(display.max())}  mean={display.mean():.1f}"
+                f"frame={counter}  mode={display_mode}  "
+                f"recv={received_fps:.1f} Hz  disp={display_fps:.1f} Hz  "
+                f"min={int(display.min())}  max={int(display.max())}  "
+                f"mean={display.mean():.1f}"
             )
 
         cv2.putText(
@@ -382,8 +427,63 @@ def main():
     parser.add_argument("--dynamic", action="store_true", help="Use dynamic min/max display scaling")
     parser.add_argument("--no_display", action="store_true", help="Read frames without drawing the heatmap")
     parser.add_argument("--show_adc", action="store_true", help="Show ADC value text in each heatmap cell")
-    parser.add_argument("--show_header", action="store_true", help="Show header area with stats ")
+    parser.add_argument("--show_header", action="store_true", help="Show header area with stats")
+    parser.add_argument(
+        "--baseline_frames",
+        type=int,
+        default=180,
+        help="Number of unloaded displayed frames used for the taxel-wise baseline",
+    )
+    parser.add_argument(
+        "--no_baseline",
+        action="store_true",
+        help="Start in raw ADC mode without automatically capturing a baseline",
+    )
+    parser.add_argument(
+        "--raw_vmin",
+        type=float,
+        default=1900.0,
+        help="Lower colour limit for raw ADC display",
+    )
+    parser.add_argument(
+        "--raw_vmax",
+        type=float,
+        default=4050.0,
+        help="Upper colour limit for raw ADC display",
+    )
+    parser.add_argument(
+        "--signal_vmax",
+        type=float,
+        default=2100.0,
+        help="Upper colour limit for baseline-subtracted response",
+    )
+    parser.add_argument(
+        "--display_threshold",
+        type=float,
+        default=250.0,
+        help=(
+            "Set positive baseline-subtracted values below this level "
+            "to zero in the displayed heatmap"
+        ),
+    )
+    parser.add_argument(
+        "--snapshot_dir",
+        default="tactile_snapshots_iou",
+        help="Root folder in which each saved three-image snapshot set is stored",
+    )
     args = parser.parse_args()
+
+    if args.baseline_frames <= 0:
+        parser.error("--baseline_frames must be positive")
+    if args.raw_vmax <= args.raw_vmin:
+        parser.error("--raw_vmax must be larger than --raw_vmin")
+    if args.signal_vmax <= 0:
+        parser.error("--signal_vmax must be positive")
+    if args.display_threshold < 0:
+        parser.error("--display_threshold cannot be negative")
+
+    snapshot_root = Path(args.snapshot_dir)
+    snapshot_root.mkdir(parents=True, exist_ok=True)
 
     print(f"Opening {args.port}...")
     # For USB CDC this baud value usually does not limit throughput, but pyserial still requires it.
@@ -399,7 +499,8 @@ def main():
     if args.no_display:
         print("No display mode. Press Ctrl+C to quit.")
     else:
-        print("Press q in the image window to quit.")
+        print("Press q to quit, s to save all three heatmap views,")
+        print("b to recapture the unloaded baseline, and r to toggle raw/delta view.")
         cv2.namedWindow("Tactile Matrix 32x12", cv2.WINDOW_NORMAL)
 
     state = {
@@ -429,27 +530,151 @@ def main():
     last_displayed_counter = None
     display_skipped_frames = 0
 
+    # Baseline is stored in the original STM32 orientation: 32 columns x 12 rows.
+    baseline_matrix = None
+    baseline_samples = []
+    collecting_baseline = not args.no_baseline
+    show_delta = not args.no_baseline
+
+    if collecting_baseline:
+        print(
+            f"Keep the sensor unloaded while collecting "
+            f"{args.baseline_frames} baseline frames..."
+        )
+
     try:
         while True:
             with lock:
                 counter = state["counter"]
                 matrix = None if state["matrix"] is None else state["matrix"].copy()
 
+            if not args.no_display:
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord("s"):
+                    if matrix is None or baseline_matrix is None:
+                        print(
+                            "Cannot save the processed view because no baseline "
+                            "is available. Capture one first with b."
+                        )
+                    else:
+                        timestamp = time.strftime("%Y%m%d_%H%M%S") + f"_{time.time_ns() % 1_000_000_000:09d}"
+                        save_dir = snapshot_root / f"{timestamp}_frame_{counter}"
+                        save_dir.mkdir(parents=True, exist_ok=False)
+
+                        common_kwargs = dict(
+                            matrix=matrix,
+                            dynamic=False,
+                            counter=counter,
+                            display_fps=current_display_fps,
+                            received_fps=current_received_fps,
+                            show_values=args.show_adc,
+                            show_header=args.show_header,
+                        )
+
+                        # 1) Baseline-subtracted and thresholded contact response.
+                        processed_img = matrix_to_image(
+                            **common_kwargs,
+                            baseline_matrix=baseline_matrix,
+                            raw_vmin=args.raw_vmin,
+                            raw_vmax=args.raw_vmax,
+                            signal_vmax=args.signal_vmax,
+                            display_threshold=args.display_threshold,
+                        )
+
+                        # 2) Raw ADC values with the focused 1900..4050-style range.
+                        raw_focused_img = matrix_to_image(
+                            **common_kwargs,
+                            baseline_matrix=None,
+                            raw_vmin=args.raw_vmin,
+                            raw_vmax=args.raw_vmax,
+                            signal_vmax=args.signal_vmax,
+                            display_threshold=args.display_threshold,
+                        )
+
+                        # 3) Raw ADC values over the complete 12-bit range.
+                        raw_full_img = matrix_to_image(
+                            **common_kwargs,
+                            baseline_matrix=None,
+                            raw_vmin=0.0,
+                            raw_vmax=4095.0,
+                            signal_vmax=args.signal_vmax,
+                            display_threshold=args.display_threshold,
+                        )
+
+                        processed_name = (
+                            f"01_processed_delta_threshold_"
+                            f"{args.display_threshold:.0f}.png"
+                        )
+                        focused_name = (
+                            f"02_raw_focused_"
+                            f"{args.raw_vmin:.0f}_{args.raw_vmax:.0f}.png"
+                        )
+                        full_name = "03_raw_full_0_4095.png"
+
+                        save_results = {
+                            processed_name: cv2.imwrite(
+                                str(save_dir / processed_name),
+                                processed_img,
+                            ),
+                            focused_name: cv2.imwrite(
+                                str(save_dir / focused_name),
+                                raw_focused_img,
+                            ),
+                            full_name: cv2.imwrite(
+                                str(save_dir / full_name),
+                                raw_full_img,
+                            ),
+                        }
+
+                        failed = [
+                            name for name, success in save_results.items()
+                            if not success
+                        ]
+
+                        if failed:
+                            print(
+                                "Some images could not be saved: "
+                                + ", ".join(failed)
+                            )
+                        else:
+                            print(f"Saved three heatmaps in: {save_dir}")
+
+                elif key == ord("b"):
+                    baseline_matrix = None
+                    baseline_samples.clear()
+                    collecting_baseline = True
+                    show_delta = True
+
+                    print(
+                        f"Recapturing baseline from {args.baseline_frames} frames. "
+                        "Remove all objects and keep the sensor unloaded."
+                    )
+
+                elif key == ord("r"):
+                    if baseline_matrix is None:
+                        show_delta = False
+                        print("No baseline is available yet; displaying raw ADC values.")
+                    else:
+                        show_delta = not show_delta
+                        print(
+                            "Displaying baseline-subtracted response."
+                            if show_delta
+                            else "Displaying raw ADC values."
+                        )
+
+                elif key == ord("q"):
+                    break
+
             # No complete frame has arrived yet.
             if matrix is None:
-                key = cv2.waitKey(1) & 0xFF
-                if key == ord("q"):
-                    break
+                if args.no_display:
+                    time.sleep(0.001)
                 continue
 
             # Do not redraw the same frame over and over if display loop is faster than serial.
             if counter == last_displayed_counter:
                 if args.no_display:
                     time.sleep(0.001)
-                else:
-                    key = cv2.waitKey(1) & 0xFF
-                    if key == ord("q"):
-                        break
                 continue
 
             # Count frames skipped by the display because a newer frame replaced old ones.
@@ -460,6 +685,26 @@ def main():
 
             last_displayed_counter = counter
             display_counter += 1
+
+            # Capture a robust taxel-wise baseline. Cast to float before storing
+            # so later subtraction cannot wrap around as unsigned integers.
+            if collecting_baseline:
+                baseline_samples.append(matrix.astype(np.float32))
+
+                if len(baseline_samples) >= args.baseline_frames:
+                    baseline_matrix = np.median(
+                        np.stack(baseline_samples, axis=0),
+                        axis=0,
+                    ).astype(np.float32)
+
+                    baseline_samples.clear()
+                    collecting_baseline = False
+                    show_delta = True
+
+                    print(
+                        "Baseline captured. "
+                        "Displaying baseline-subtracted response."
+                    )
 
             # Print stats once per second.
             now = time.perf_counter()
@@ -497,16 +742,20 @@ def main():
                     display_fps=current_display_fps,
                     received_fps=current_received_fps,
                     show_values=args.show_adc,
-                    show_header=args.show_header
+                    show_header=args.show_header,
+                    baseline_matrix=(
+                        baseline_matrix
+                        if show_delta and baseline_matrix is not None
+                        else None
+                    ),
+                    raw_vmin=args.raw_vmin,
+                    raw_vmax=args.raw_vmax,
+                    signal_vmax=args.signal_vmax,
+                    display_threshold=args.display_threshold,
                 )
 
                 cv2.imshow("Tactile Matrix 32x12", img)
 
-                key = cv2.waitKey(1) & 0xFF
-                if key == ord("s"):
-                    cv2.imwrite(f"tactile_snapshot_{counter}.png", img)
-                elif key == ord("q"):
-                    break
             else:
                 # In no-display mode, let the reader thread do the work and avoid a CPU spin loop.
                 time.sleep(0.001)
