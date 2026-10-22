@@ -460,7 +460,7 @@ def main():
     parser.add_argument(
         "--display_threshold",
         type=float,
-        default=250.0,
+        default=500.0,
         help=(
             "Set positive baseline-subtracted values below this level "
             "to zero in the displayed heatmap"

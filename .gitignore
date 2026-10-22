@@ -13,6 +13,8 @@ iou_dice_results/
 *.npz
 *.csv
 *.png
+tests/
+thesis_experiments/
 
 # macOS / editor
 .DS_Store
