@@ -1,22 +1,40 @@
 # Python
 __pycache__/
-*.pyc
+*.py[cod]
 .venv/
 venv/
+.pytest_cache/
 
-# Measurement outputs
+# Measurement output directories
 noise_test_*/
 thesis_noise/
 tactile_snapshots_iou/
 tactile_snapshots/
 iou_dice_results/
+thesis_experiments/
+
+# Measurement data
 *.npz
 *.csv
+*.txt
+
+# Generated plots and images
 *.png
-tests/
-thesis_experiments/
+*.jpg
+*.jpeg
+*.svg
+
+# Logs and temporary files
+*.log
+*.tmp
+
+# Local configuration
+.env
+.env.*
+!.env.example
 
 # macOS / editor
 .DS_Store
 .vscode/
 .idea/
+
