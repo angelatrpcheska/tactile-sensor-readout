@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
-"""
-check_tactile_noise.py
-
-Thesis-friendly tactile sensor noise / signal characterization.
+"""Measure tactile sensor noise and contact response.
 
 Packet format:
     AA 55 + uint32 frame_counter + packed 12-bit ADC payload + CRC16-CCITT-FALSE
 
-Default orientation matches read_tactile_threaded.py display:
+Default orientation matches the read_tactile_threaded.py display:
     firmware [col][row] = 32x12 -> display [row][col] = 12x32 -> left/right flip
 
 Typical runs:
@@ -108,8 +105,8 @@ class TactilePacketReader:
 
     @staticmethod
     def crc16_ccitt_false(data: bytes) -> int:
-        # Same unreflected polynomial 0x1021, initial value 0xFFFF, no xor-out;
-        # the standard-library C implementation avoids a Python loop per bit.
+        # Unreflected polynomial 0x1021, initial value 0xFFFF, no xor-out.
+        # Use the C implementation to avoid a Python loop per bit.
         return binascii.crc_hqx(data, 0xFFFF)
 
     def _read_more(self, deadline: Optional[float] = None) -> bool:
@@ -176,7 +173,7 @@ class TactilePacketReader:
         if self.flip_lr:
             frame = np.fliplr(frame)
 
-        # Preserve the exact 12-bit integer measurements and halve RAM use.
+        # uint16 preserves the 12-bit ADC values at half the float32 storage cost.
         return np.ascontiguousarray(frame, dtype=np.uint16)
 
     def _parse_buffer(self, max_frames: Optional[int] = None) -> Tuple[List[np.ndarray], List[int]]:
@@ -231,7 +228,7 @@ class TactilePacketReader:
         return frames, counters
 
     def read_frame(self) -> Tuple[np.ndarray, int]:
-        """Single-frame interface for startup/warmup only."""
+        """Read one frame for startup and warmup."""
         while True:
             frames, counters = self._parse_buffer(max_frames=1)
             if frames:
@@ -241,9 +238,8 @@ class TactilePacketReader:
     def read_available_frames(
         self, deadline: Optional[float] = None,
     ) -> Tuple[List[np.ndarray], List[int]]:
-        """Drain serial once and return EVERY complete valid frame in order."""
-        # Already-read bytes are still parsed if a read times out. No complete
-        # valid packet is intentionally discarded during the recording.
+        """Drain serial once and return all complete valid frames in order."""
+        # Parse buffered bytes after a timeout to retain complete valid packets.
         try:
             self._read_more(deadline)
         except FrameTimeoutError:
@@ -320,7 +316,7 @@ class ContinuousReceiver:
             }
 
     def wait_for_discarded_frames(self, n: int, timeout_s: float = 10.0) -> Dict[str, int]:
-        """Require valid startup packets; fail instead of waiting forever."""
+        """Wait for valid startup packets within a finite timeout."""
         if not np.isfinite(timeout_s) or timeout_s <= 0:
             raise ValueError("Warmup timeout must be finite and positive")
         before = self.snapshot_stats()
@@ -366,7 +362,7 @@ class ContinuousReceiver:
             frames, counters, stats = self._completed_capture
             self._completed_capture = None
             self._capture_requested = False
-        # Stack/diagnose in the caller while the receiver continues draining.
+        # Stack frames and compute diagnostics while the receiver keeps draining.
         return summarize_capture(frames, counters, stats)
 
     def stop_recording(self) -> Tuple[np.ndarray, float, Dict[str, Any]]:
@@ -454,7 +450,7 @@ class ContinuousReceiver:
                     pass
 
                 with self._condition:
-                    # Finish BEFORE parsing late packets so their frames and
+                    # Finish before parsing late packets so their frames and
                     # CRC/format errors belong to DISCARD, not this capture.
                     if self._mode == self.RECORD and self.reader.last_read_completed_at >= self._capture_deadline:
                         # A timeout caused solely by the deadline is a lifetime
@@ -483,9 +479,8 @@ class ContinuousReceiver:
                         self._valid_frames_discarded += len(frames)
                     self._published_stats = self.reader.snapshot_stats()
                     if self._mode == self.RECORD and time.perf_counter() >= self._capture_deadline:
-                        # Keep predeadline receipts even if parsing finishes
-                        # late. The receipt cutoff remains the logical deadline;
-                        # report finalization lag separately from the interval.
+                        # Retain receipts before the deadline even if parsing
+                        # finishes late; report finalization lag separately.
                         self._finish_capture_locked(self._capture_deadline)
                     self._condition.notify_all()
         except BaseException as exc:
@@ -512,7 +507,7 @@ def capture_frames(
 def summarize_capture(
     frames: List[np.ndarray], counters: List[int], stats: Dict[str, Any],
 ) -> Tuple[np.ndarray, float, Dict[str, Any]]:
-    """Compute diagnostics in the caller after recording has ended."""
+    """Compute capture diagnostics after recording ends."""
     if not frames:
         raise RuntimeError("No valid frames captured. Check port, packet format, CRC, and firmware.")
 
@@ -554,7 +549,7 @@ def save_heatmap_png(
     vmin: Optional[float] = None,
     vmax: Optional[float] = None,
 ) -> None:
-    """Save a heatmap. If vmin/vmax are given, the color scale is fixed."""
+    """Save a heatmap with an optional fixed color scale."""
     arr = np.asarray(data, dtype=np.float32)
 
     try:
@@ -1112,7 +1107,6 @@ def main() -> None:
             practical_high_saturation=args.practical_high_saturation,
         )
 
-        # Fixed-scale thesis heatmaps.
         save_heatmap_png(out_dir / "baseline_mean_raw_fixed.png", baseline["mean"], "Baseline mean ADC, fixed scale", "ADC counts", vmin=args.raw_vmin, vmax=args.raw_vmax)
         save_heatmap_png(out_dir / "baseline_mean_zoom_fixed.png", baseline["mean"], "Baseline mean ADC, zoomed fixed scale", "ADC counts", vmin=args.baseline_zoom_vmin, vmax=args.baseline_zoom_vmax)
         save_heatmap_png(out_dir / "noise_std_fixed.png", baseline["std"], "No-touch noise standard deviation, fixed scale", "ADC counts", vmin=args.noise_std_vmin, vmax=args.noise_std_vmax)
@@ -1127,7 +1121,6 @@ def main() -> None:
             save_heatmap_png(out_dir / "snr_fixed.png", touch["snr"], "Signal-to-noise ratio, fixed scale", "SNR", vmin=args.snr_vmin, vmax=args.snr_vmax)
             save_heatmap_png(out_dir / "reliable_taxels.png", touch["reliable"].astype(float), "Reliable taxels", "0/1", vmin=0, vmax=1)
 
-        # Optional dynamic heatmaps for debugging only.
         if args.save_dynamic_debug:
             save_heatmap_png(out_dir / "baseline_mean_dynamic_debug.png", baseline["mean"], "Baseline mean ADC, dynamic debug", "ADC counts")
             save_heatmap_png(out_dir / "noise_std_dynamic_debug.png", baseline["std"], "No-touch noise std, dynamic debug", "ADC counts")

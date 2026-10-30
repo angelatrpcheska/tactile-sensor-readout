@@ -1,31 +1,14 @@
 #!/usr/bin/env python3
-"""
-Calculate IoU and Dice for processed tactile heatmap snapshots against
-the diagonal triple-stripe mold reference mask.
+"""Calculate snapshot IoU/Dice against a diagonal triple-stripe reference mask.
 
-Expected folder structure:
-
-project_directory/
-├── analysis/
-│   └── calculate_iou_dice.py
-└── tactile_snapshots_iou/
-    ├── 20260720_153402_frame_222569/
-    │   └── 01_processed_delta_threshold_500.png
-    ├── 20260720_153854_frame_251791/
-    │   └── 01_processed_delta_threshold_500.png
-    └── ...
-
-Run:
+Run from the repository root:
     python3 analysis/calculate_iou_dice.py
-
-Or specify another folder:
     python3 analysis/calculate_iou_dice.py --root /path/to/tactile_snapshots_iou
 
-Outputs are written inside tactile_snapshots_iou:
-    iou_dice_results.csv
-    iou_dice_summary.json
-    reference_mask.png
-    iou_dice_overlays/
+By default, search tactile_snapshots_iou/ beside analysis/ for
+01_processed_delta_threshold_500.png in each snapshot subfolder. Write
+iou_dice_results.csv, iou_dice_summary.json, reference_mask.png, and
+iou_dice_overlays/ under the selected root.
 """
 
 from __future__ import annotations
@@ -41,53 +24,42 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 
-# ---------------------------------------------------------------------------
 # Sensor and saved-image configuration
-# ---------------------------------------------------------------------------
 
 ROWS = 12
 COLS = 32
 
-# The saved processed images produced by the tactile viewer are 960 x 340 px:
-# 40 px title/header + 300 px heatmap.
+# Viewer snapshots are 960 x 340 px: a 40 px header and a 300 px heatmap.
 DEFAULT_HEATMAP_TOP_PX = 40
 
-# A taxel is considered active when its sampled colour differs sufficiently
-# from the dominant zero-response colour. The processed image has already had
-# responses below 500 ADC counts set to zero.
+# Detect activity by colour distance from the dominant zero-response colour.
+# The processed image already suppresses responses below 500 ADC counts.
 DEFAULT_COLOUR_DISTANCE_THRESHOLD = 20.0
 
-# Use only the centre of each plotted cell, avoiding grid lines.
+# Sample cell centres to avoid grid lines.
 CELL_SAMPLE_MARGIN = 0.28
 
 
-# ---------------------------------------------------------------------------
 # Physical reference-mask configuration
-# ---------------------------------------------------------------------------
 
 TAXEL_PITCH_MM = 2.0
 ACTIVE_WIDTH_MM = 64.0
 ACTIVE_HEIGHT_MM = 24.0
 
-# The printed mold footprint is 65 x 26 mm and is assumed to be centred over
-# the 64 x 24 mm sensor area.
+# Assume the 65 x 26 mm mold is centred over the 64 x 24 mm sensor area.
 MOLD_WIDTH_MM = 65.0
 MOLD_HEIGHT_MM = 26.0
 ACTIVE_ORIGIN_X_MM = (MOLD_WIDTH_MM - ACTIVE_WIDTH_MM) / 2.0   # 0.5 mm
 ACTIVE_ORIGIN_Y_MM = (MOLD_HEIGHT_MM - ACTIVE_HEIGHT_MM) / 2.0 # 1.0 mm
 
-# Actual measured stripe width. Change this only if you re-measure the mold.
+# Measured mold stripe width.
 DEFAULT_STRIPE_WIDTH_MM = 4
 
-# Fraction of a 2 x 2 mm taxel area that must be covered by the ideal stripe
-# geometry for that taxel to belong to the binary reference mask.
+# Minimum ideal stripe coverage of a 2 x 2 mm taxel for reference membership.
 DEFAULT_MIN_TAXEL_OVERLAP = 0.25
 
-# Centre-line endpoints of the three diagonal stripes, in millimetres relative
-# to the top-left corner of the 65 x 26 mm mold footprint.
-#
-# These positions come from the diagonal three-stripe CAD geometry. Only the
-# stripe width is changed from the nominal design to the measured 4 mm.
+# CAD stripe centre-line endpoints, in millimetres from the mold's top-left
+# corner. The measured 4 mm width replaces the nominal design width.
 STRIPE_CENTRE_LINES_MM = (
     ((8.3578643763,  6.63603896935), (21.0857864377, 19.36396103070)),
     ((26.1360389694, 6.63603896935), (38.8639610307, 19.36396103070)),
@@ -202,10 +174,7 @@ def _cell_centre_colours(
     image_rgb: np.ndarray,
     heatmap_top: int,
 ) -> np.ndarray:
-    """
-    Return one representative RGB colour per taxel by taking the median over
-    the centre region of each plotted heatmap cell.
-    """
+    """Return the median RGB colour from each heatmap cell's centre region."""
     if image_rgb.ndim != 3 or image_rgb.shape[2] != 3:
         raise ValueError(f"Expected RGB image, received shape {image_rgb.shape}")
 
@@ -259,8 +228,8 @@ def extract_measured_mask(
     image = np.asarray(Image.open(image_path).convert("RGB"))
     colours = _cell_centre_colours(image, heatmap_top)
 
-    # Quantise slightly, then use the most frequent taxel colour as the
-    # zero-response background. Most taxels should be inactive.
+    # Estimate the zero-response colour from the quantised mode; this assumes
+    # most taxels are inactive.
     quantised = (np.rint(colours / 4.0) * 4.0).astype(np.int16)
     flat = quantised.reshape(-1, 3)
     unique, counts = np.unique(flat, axis=0, return_counts=True)
@@ -274,19 +243,10 @@ def extract_measured_mask(
 
 
 def load_reference_mask_file(mask_path: Path) -> np.ndarray:
-    """
-    Load an external binary 12x32 reference mask.
+    """Load a 12x32 binary NPY or clean black/white PNG reference mask.
 
-    Recommended format:
-        np.save("dxf_reference_mask_4p2mm.npy", mask.astype(np.uint8))
-
-    Supported inputs:
-      - .npy containing an array with shape (12, 32)
-      - a clean black/white PNG with shape 12x32
-      - a clean enlarged PNG whose dimensions are exact multiples of 12x32
-
-    Do not pass a Matplotlib screenshot containing a title, axes, margins, or
-    labels. Save the underlying binary matrix instead.
+    PNGs may be uniformly enlarged by an integer factor, without axes,
+    labels, or margins. Prefer the underlying matrix to a plotted figure.
     """
     path = mask_path.expanduser().resolve()
     if not path.exists():
@@ -312,8 +272,7 @@ def load_reference_mask_file(mask_path: Path) -> np.ndarray:
         and width % COLS == 0
         and width * ROWS == height * COLS
     ):
-        # Average each clean enlarged taxel block. This tolerates thin grid
-        # lines but assumes the PNG contains only the mask, with no axes/title.
+        # Block averaging tolerates thin grid lines in an otherwise clean mask.
         block_h = height // ROWS
         block_w = width // COLS
         cell_values = image.reshape(
@@ -326,7 +285,7 @@ def load_reference_mask_file(mask_path: Path) -> np.ndarray:
             "title and axes. Save the underlying 12x32 binary array as .npy."
         )
 
-    # Works for either 0/1 or 0/255 images.
+    # Support both 0/1 and 0/255 image intensities.
     threshold = 0.5 if float(cell_values.max()) <= 1.0 else 127.5
     return cell_values > threshold
 
@@ -338,9 +297,7 @@ def _inside_flat_capped_stripe(
     end_xy: tuple[float, float],
     width_mm: float,
 ) -> np.ndarray:
-    """
-    Test whether points are inside a finite rectangular stripe with flat ends.
-    """
+    """Test membership in a finite rectangular stripe with flat ends."""
     x0, y0 = start_xy
     x1, y1 = end_xy
 
@@ -397,7 +354,6 @@ def build_reference_mask(
                 + (row + sub[:, None]) * TAXEL_PITCH_MM
             )
 
-            # Broadcast to a supersampling x supersampling point grid.
             x_grid = np.broadcast_to(x, (supersampling, supersampling))
             y_grid = np.broadcast_to(y, (supersampling, supersampling))
 
@@ -544,6 +500,7 @@ def save_overlay(
 
 
 def _statistics(values: Iterable[float]) -> dict[str, float]:
+    """Summarize values using sample standard deviation (ddof=1)."""
     array = np.asarray(list(values), dtype=np.float64)
     if array.size == 0:
         raise ValueError("Cannot summarize an empty sequence")

@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
 """Threshold sensitivity analysis of tactile mold experiment recordings.
 
-Uses saved unthresholded mean ADC differences ("delta") and an independently
-specified 12x32 binary reference mask. NEVER recalibrates the reference
-alignment or chooses an "optimal" threshold on the evaluation trials.
+Sweep saved unthresholded mean ADC differences ("delta") against a fixed,
+independent 12x32 reference mask. Results describe these evaluation trials;
+they do not validate an optimal threshold or recalibrate reference alignment.
 
 Usage from tactile-sensor-readout/:
     python3 analysis/analyze_threshold_sensitivity.py \
-      --data "thesis_experiments/three_stripe_200g_20261022_170808" \
+      --data "thesis_experiments/session" \
       --reference "reference_mask.png" \
       --out "thesis_experiments/three_stripe_threshold_analysis"
 
 Also accepts a ZIP file with the same trial_###/measurements.npz structure.
-Requirements: numpy, matplotlib, pillow.
 """
 import argparse
 import csv
@@ -126,6 +125,7 @@ def main():
                         TP=tp, FP=fp, FN=fn, IoU=iou, Dice=dice)
             per_trial.append(item)
             metrics.append(item)
+        # Sample SD describes variation across independent placements.
         sd = lambda vals: float(np.std(vals, ddof=1)) if len(vals) > 1 else 0.0
         s = dict(threshold_adc=threshold, trials=len(trials), reference_taxels=int(reference.sum()),
                  mean_IoU=float(np.mean([r['IoU'] for r in metrics])),
@@ -178,7 +178,7 @@ def main():
         ax.set_yticks(np.arange(0, 1.01, .2))
         ax.grid(alpha=.2)
         ax.legend(loc='best')
-        # Retain the original analysis chart alongside the separate thesis exports.
+        # Keep the analysis chart alongside the separate thesis exports.
         fig.savefig(args.out / 'threshold_iou_dice.png', dpi=300, bbox_inches='tight')
         args.figures_dir.mkdir(parents=True, exist_ok=True)
         fig.savefig(args.figures_dir / 'vpliv_praga_zaznave.pdf')

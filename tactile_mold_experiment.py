@@ -1,33 +1,32 @@
 #!/usr/bin/env python3
 """Record repeatable tactile mold measurements at full USB frame rate.
 
-The file MUST be placed beside your already-tested check_tactile_noise.py.
-It reuses that script's continuous CRC-checked 12-bit packet receiver rather
-than the live viewer, which deliberately discards frames for low-lag display.
+Keep this script beside check_tactile_noise.py, which supplies the continuous
+CRC-checked 12-bit receiver. The live viewer instead discards intermediate
+frames to keep the display responsive.
 
 For each independent placement, record in order:
     1. unloaded baseline (mold removed)
     2. steady contact (mold and known load applied)
     3. unloaded recovery (mold and load removed)
 
-User confirms each stable state by pressing ENTER. The USB receiver keeps
-reading (discarding) packets during manual repositioning and settling; recorded
-intervals are separate, time-defined host capture windows. Raw data and frame
-counters are saved for every phase and repeated placement. No sample-accurate
-load onset/offset is captured; use another protocol for response-time studies.
+Press ENTER to confirm each stable state. The receiver drains and discards
+packets during repositioning and settling. Each phase uses a separate host-timed
+capture window and saves raw frames and counters. Load onset and removal are
+not sample-aligned; this protocol measures steady states, not response time.
 
 Examples:
-    python3 tactile_mold_experiment.py --port /dev/cu.usbmodem2078388A45461 \\
+    python tactile_mold_experiment.py --port /dev/cu.usbmodemXXXX \\
       --mold_id three_stripe --load_g 200 --repeats 1 --baseline_sec 2 \\
-      --contact_sec 2 --recovery_sec 2 --trial_name mold_pilot
+      --contact_sec 2 --recovery_sec 2 --trial_name mold_pilot --out_root thesis_experiments
 
-    python3 tactile_mold_experiment.py --port /dev/cu.usbmodem2078388A45461 \\
+    python tactile_mold_experiment.py --port /dev/cu.usbmodemXXXX \\
       --mold_id three_stripe --load_g 200 --repeats 10 --trial_name mold_200g \\
       --baseline_sec 3 --contact_sec 3 --recovery_sec 3 \\
-      --reference_mask reference_12x32.npy
+      --reference_mask reference_12x32.npy --out_root thesis_experiments
 
-Reference mask is optional and must be a correctly oriented 12x32 binary array.
-Without it, the script saves the predicted mask but does not claim an IoU.
+The optional reference must be a correctly oriented 12x32 binary array.
+Without it, predicted masks are saved but IoU and Dice are not calculated.
 """
 
 import argparse
@@ -126,7 +125,7 @@ def summary_matrix_stats(arr):
 
 
 def calculate_results(baseline_frames, contact_frames, recovery_frames, threshold, reference=None):
-    """Derive stable-plateau mean maps and thresholded positive contact region."""
+    """Compute steady-state mean maps and threshold the positive contact response."""
     for label, frames in [('baseline',baseline_frames),('contact',contact_frames),('recovery',recovery_frames)]:
         if frames.ndim != 3 or frames.shape[1:] != (ROWS, COLS) or frames.shape[0] == 0:
             raise ValueError(f'{label} frames have unexpected shape {frames.shape}')
@@ -134,7 +133,7 @@ def calculate_results(baseline_frames, contact_frames, recovery_frames, threshol
     contact_mean = contact_frames.mean(axis=0, dtype=np.float64)
     recovery_mean = recovery_frames.mean(axis=0, dtype=np.float64)
     baseline_std = baseline_frames.std(axis=0, dtype=np.float64)
-    delta = contact_mean - baseline_mean  # positive changes = activation
+    delta = contact_mean - baseline_mean  # Positive ADC changes indicate activation.
     recovery_delta = recovery_mean - baseline_mean
     active = delta >= threshold
     metrics = {
@@ -200,7 +199,7 @@ def record_phase(receiver, name, seconds, settle):
         'recovery': 'REMOVE the mold and load completely; sensor unloaded and stable.',
     }
     input(f'  {name.upper()}: {descriptions[name]}\n  Press ENTER when ready...')
-    # Reader continues draining during the physical setup and this settling delay.
+    # The receiver keeps draining during setup and settling.
     before = receiver.snapshot_stats()['valid_frames_discarded']
     if settle:
         time.sleep(settle)
@@ -209,7 +208,7 @@ def record_phase(receiver, name, seconds, settle):
     print(f'    -> {len(frames)} frames / {stats["actual_duration_s"]:.3f} s '
           f'({fps:.2f} Hz), counter skips={stats["counter_skips"]}, '
           f'CRC errors={stats["crc_errors"]}')
-    # ADC values are uint12; store exact values using uint16.
+    # uint16 stores the 12-bit ADC values exactly.
     if not np.all((frames >= 0) & (frames <= 4095)):
         raise ValueError('Unexpected ADC values outside 0..4095')
     return frames.astype(np.uint16), stats

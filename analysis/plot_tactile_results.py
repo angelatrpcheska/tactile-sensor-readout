@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
-"""Regenerate Slovenian thesis figures from an EXISTING noise_results.npz.
+"""Regenerate Slovenian thesis figures from a saved noise_results.npz.
 
 No serial port, sensor connection, or new acquisition is required.
 
-Examples:
+Examples from the repository root:
     python analysis/plot_tactile_results.py "/path/to/noise_results.npz" --duration-sec 180
     python analysis/plot_tactile_results.py "/path/to/noise_results.npz" --duration-sec 180 --all --timeseries
     python analysis/plot_tactile_results.py "/path/to/results_folder" --all --no-title
 
 Each figure is saved as both PNG and PDF. Use --font-size to adjust text size.
-
-Requirements: pip install numpy matplotlib
 """
 
 import argparse
@@ -19,7 +17,7 @@ from pathlib import Path
 from typing import Optional
 
 import matplotlib
-matplotlib.use("Agg")  # Works without a graphical desktop.
+matplotlib.use("Agg")  # Render without a graphical desktop.
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import BoundaryNorm, ListedColormap
@@ -118,8 +116,8 @@ def make_timeseries(data: np.lib.npyio.NpzFile, filename: Path,
     if frames.shape[1] < 1 or frames.shape[2] < 20:
         print("Time-series skipped: expected at least 1 row and 20 columns.")
         return
-    # Zero-based coordinates. Changes near (0,17) and (0,18) were seen in
-    # the 180-second trial; (0,19) is included as a nearby stable comparison.
+    # Zero-based taxels (0,17) and (0,18) changed in the 180-second trial;
+    # (0,19) provides a nearby stable comparison.
     chosen = [(0, 17), (0, 18), (0, 19)]
     sample_step = max(1, math.ceil(len(frames) / 3500))
     indices = np.arange(0, len(frames), sample_step)
@@ -131,7 +129,7 @@ def make_timeseries(data: np.lib.npyio.NpzFile, filename: Path,
         xlabel = "Čas [s]"
     fig, ax = plt.subplots(figsize=(11, 4.6), layout="constrained")
     for row, col in chosen:
-        # Baseline of each taxel is subtracted for visual comparability.
+        # Subtract each taxel's initial median (up to 3000 frames) for comparison.
         signal = np.asarray(frames[indices, row, col], dtype=float)
         reference = float(np.median(frames[:min(len(frames), 3000), row, col]))
         ax.plot(x, signal - reference, linewidth=1.0,

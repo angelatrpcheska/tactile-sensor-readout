@@ -1,3 +1,9 @@
+"""Live viewer for legacy 100 Hz STM32 uint16 ADC frames without CRC.
+
+Run from the repository root:
+    python read_tactile_threaded_100Hz.py --port /dev/ttyACM0
+"""
+
 import argparse
 import struct
 import serial
@@ -12,16 +18,8 @@ NUM_ROWS = 12
 
 SYNC = b"\xAA\x55"
 HEADER_SIZE = 6
-#CRC_SIZE = 2
 DATA_SIZE = NUM_COLS * NUM_ROWS * 2
-#NUM_VALUES = NUM_COLS * NUM_ROWS
-
-#if NUM_VALUES % 2 != 0:
-#    raise ValueError("12-bit packing requires an even number of ADC values")
-
-#DATA_SIZE = (NUM_VALUES * 3) // 2
 PACKET_SIZE = HEADER_SIZE + DATA_SIZE
-#PACKET_SIZE = HEADER_SIZE + DATA_SIZE + CRC_SIZE
 
 def read_exact(ser, n):
     data = bytearray()
@@ -46,85 +44,22 @@ def find_sync(ser):
 
         prev = b
 
-# def unpack_12bit_payload(payload):
-#     """
-#     Unpack STM32 format:
-#       2 ADC values = 3 bytes
-
-#     byte0 = a[7:0]
-#     byte1 = a[11:8] | b[3:0] << 4
-#     byte2 = b[11:4]
-#     """
-#     raw = np.frombuffer(payload, dtype=np.uint8)
-
-#     if raw.size != DATA_SIZE:
-#         return None
-
-#     triples = raw.reshape(-1, 3).astype(np.uint16)
-
-#     a = triples[:, 0] | ((triples[:, 1] & 0x0F) << 8)
-#     b = ((triples[:, 1] >> 4) & 0x0F) | (triples[:, 2] << 4)
-
-#     values = np.empty(NUM_VALUES, dtype=np.uint16)
-#     values[0::2] = a & 0x0FFF
-#     values[1::2] = b & 0x0FFF
-
-#     return values
-
-
-# def crc16_ccitt_false(data):
-#     crc = 0xFFFF
-
-#     for byte in data:
-#         crc ^= byte << 8
-
-#         for _ in range(8):
-#             if crc & 0x8000:
-#                 crc = ((crc << 1) ^ 0x1021) & 0xFFFF
-#             else:
-#                 crc = (crc << 1) & 0xFFFF
-
-#     return crc
-
-
 def read_frame(ser):
-    """
-    Blocking-ish read of one complete tactile frame.
-    Kept mostly for debugging; the live viewer below uses the faster buffered reader.
-    """
-    # Find 0xAA 0x55
+    """Read one frame for debugging; the live viewer uses the buffered reader."""
     if not find_sync(ser):
         return None, None
 
-    # Read frame counter
     counter_bytes = read_exact(ser, 4)
     if counter_bytes is None:
         return None, None
 
     frame_counter = struct.unpack("<I", counter_bytes)[0]
 
-    # Read ADC frame data
     payload = read_exact(ser, DATA_SIZE)
     if payload is None:
         return None, None
 
-    # crc_bytes = read_exact(ser, CRC_SIZE)
-    # if crc_bytes is None:
-    #     return None, None
-
-    # crc_rx = struct.unpack("<H", crc_bytes)[0]
-    # crc_calc = crc16_ccitt_false(counter_bytes + payload)
-
-    # if crc_rx != crc_calc:
-    #     return None, None
-
-    # values = unpack_12bit_payload(payload)
-
     values = np.frombuffer(payload, dtype="<u2")  # little-endian uint16
-
-    # if values.size != NUM_COLS * NUM_ROWS:
-    #    return None, None
-    # values = unpack_12bit_payload(payload)
 
     if values is None:
          return None, None
@@ -135,15 +70,12 @@ def read_frame(ser):
 
 
 def read_latest_available_frame(ser, rxbuf):
-    """
-    Read all bytes currently available from serial.
-    Parse all complete frames.
-    Return only the newest complete frame.
+    """Parse buffered packets and return the newest frame and valid-frame count.
 
-    This prevents display lag by dropping old queued frames.
+    Older complete frames are discarded to limit display latency. Incomplete
+    packets remain buffered for the next read.
     """
-    # Read whatever is already waiting. If nothing is waiting, read 1 byte
-    # with the short serial timeout so the reader thread can stop cleanly.
+    # An empty-buffer read uses the serial timeout so the thread can stop promptly.
     n = ser.in_waiting
 
     if n > 0:
@@ -161,57 +93,30 @@ def read_latest_available_frame(ser, rxbuf):
     frames_parsed = 0
 
     while True:
-        # Find sync bytes AA 55
         sync_idx = rxbuf.find(SYNC)
 
         if sync_idx < 0:
-            # Keep last byte only in case it is 0xAA and next byte becomes 0x55
+            # Retain a possible first sync byte spanning serial reads.
             if len(rxbuf) > 1:
                 rxbuf[:] = rxbuf[-1:]
             break
 
-        # Drop garbage before sync
         if sync_idx > 0:
             del rxbuf[:sync_idx]
 
-        # Wait until a full packet is available
         if len(rxbuf) < PACKET_SIZE:
             break
 
-        # # Extract one packet, but do not delete it yet.
+        # Layout: sync [0:2], little-endian counter [2:6], uint16 ADCs [6:774].
+        # This firmware profile has no CRC; packed12+CRC is handled by the current viewer.
         packet = bytes(rxbuf[:PACKET_SIZE])
         del rxbuf[:PACKET_SIZE]
-        # counter_bytes = packet[2:6]
-        # payload_start = HEADER_SIZE
-        # payload_end = HEADER_SIZE + DATA_SIZE
-        # payload = packet[payload_start:payload_end]
-        # crc_bytes = packet[payload_end:payload_end + CRC_SIZE]
-
-        # crc_rx = struct.unpack("<H", crc_bytes)[0]
-        # crc_calc = crc16_ccitt_false(counter_bytes + payload)
-
-        # if crc_rx != crc_calc:
-        #     # False sync or corrupted packet.
-        #     # Delete only the first byte and search again.
-        #     del rxbuf[0:1]
-        #     continue
-
-        # # CRC is valid, now we can remove the whole packet.
-        # del rxbuf[:PACKET_SIZE]
-
-        # counter = struct.unpack("<I", counter_bytes)[0]
-        # Packet layout:
-        # [0:2] sync AA 55
-        # [2:6] uint32 frame counter
-        # [6:]  packed 12-bit ADC values: 2 values in 3 bytes
         counter = struct.unpack("<I", packet[2:6])[0]
         payload = packet[6:]
 
-        values = np.frombuffer(payload, dtype="<u2") # uint16 ADC values
+        values = np.frombuffer(payload, dtype="<u2")
         if values.size != NUM_COLS * NUM_ROWS:
             continue
-
-        # values = unpack_12bit_payload(payload)
 
         if values is None:
             continue
@@ -224,12 +129,10 @@ def read_latest_available_frame(ser, rxbuf):
 
 
 def serial_reader_thread(ser, state, lock, stop_event):
-    """
-    Continuously consume serial bytes in the background.
+    """Drain serial input in the background, retaining the newest frame.
 
-    The reader always stores only the newest complete frame in `state`.
-    This keeps the OS / pyserial receive buffer from growing while OpenCV
-    is busy drawing the heatmap.
+    Track parsed frames separately from frames omitted for display and counter
+    gaps, so deliberate display drops are not reported as missing sensor frames.
     """
     rxbuf = bytearray()
     last_received_counter = None
@@ -242,22 +145,17 @@ def serial_reader_thread(ser, state, lock, stop_event):
 
         stm32_skips = 0
         if last_received_counter is not None:
-            #expected = (last_received_counter + 1) & 0xFFFFFFFF
-            # If read_latest_available_frame() parsed N frames and returned only
-            # the newest one, then a counter jump of N is normal.
+            # The newest counter advances by parsed_count, modulo uint32.
             expected = (last_received_counter + parsed_count) & 0xFFFFFFFF
 
             if counter != expected:
-                # This means the frame counter jumped between frames that the
-                # Python reader actually received. If the firmware intentionally
-                # drops frames when USB is busy, this can be nonzero.
+                # Unaccounted counter gaps can include firmware drops under USB load.
                 stm32_skips = (counter - expected) & 0xFFFFFFFF
 
         last_received_counter = counter
 
         with lock:
-            # Intentionally overwrite the previous frame. For live viewing,
-            # newest data is better than displaying every old frame.
+            # Replace the previous frame rather than queue stale display updates.
             state["counter"] = counter
             state["matrix"] = matrix
             state["received_frames"] += parsed_count
@@ -279,13 +177,9 @@ def matrix_to_image(
     signal_vmax=2100.0,
     display_threshold=250.0,
 ):
-    """
-    matrix shape from STM32: [column][row] = 32x12
-    Display: 12 rows x 32 columns
-    """
+    """Render raw ADC values or a baseline-subtracted, display-filtered heatmap."""
 
-    # STM32 sends [column][row] = 32x12. Transpose to display as 12x32,
-    # then flip left<->right.
+    # Convert STM32 [column][row] (32x12) to display (12x32), then mirror columns.
     raw_display = np.fliplr(matrix.T).astype(np.float32)
 
     if baseline_matrix is not None:
@@ -293,8 +187,7 @@ def matrix_to_image(
             baseline_matrix.T
         ).astype(np.float32)
 
-        # Signed taxel-wise response. Keep this unfiltered for statistics and
-        # value labels; only the colour image is thresholded.
+        # Preserve signed float differences for statistics and labels; threshold colours only.
         display = raw_display - baseline_display
 
         # Contact is expected to increase the ADC value.
@@ -319,7 +212,7 @@ def matrix_to_image(
 
     rows, cols = display.shape
 
-    # Smaller cells make OpenCV drawing much faster and reduce display lag.
+    # Limit cell size to reduce OpenCV drawing latency.
     cell_w = 30
     cell_h = 25
     header_h = 40
@@ -327,7 +220,6 @@ def matrix_to_image(
     grid_w = cols * cell_w
     grid_h = rows * cell_h
 
-    # Normalize for colour.
     if dynamic:
         mn = float(color_values.min())
         mx = float(color_values.max())
@@ -347,7 +239,6 @@ def matrix_to_image(
 
     norm = np.clip(norm, 0, 255).astype(np.uint8)
 
-    # Make colored cells
     color_small = cv2.applyColorMap(norm, cv2.COLORMAP_VIRIDIS)
     grid_img = cv2.resize(
         color_small,
@@ -356,13 +247,10 @@ def matrix_to_image(
     )
 
     if show_header:
-        # Add separate header area
         img = np.zeros((header_h + grid_h, grid_w, 3), dtype=np.uint8)
         img[:] = (30, 30, 30)
         img[header_h:header_h + grid_h, 0:grid_w] = grid_img
 
-        # Header text
-        
         if counter is None:
             title = (
                 f"mode={display_mode}  recv={received_fps:.1f} Hz  "
@@ -390,7 +278,6 @@ def matrix_to_image(
     else:
         img = grid_img
 
-    # Draw grid and values
     for r in range(rows):
         for c in range(cols):
             x0 = c * cell_w
@@ -487,12 +374,11 @@ def main():
     snapshot_root.mkdir(parents=True, exist_ok=True)
 
     print(f"Opening {args.port}...")
-    # For USB CDC this baud value usually does not limit throughput, but pyserial still requires it.
-    # Short timeout keeps the reader thread responsive.
+    # Pyserial requires a baud setting; USB CDC throughput is usually independent of it.
+    # A short timeout keeps shutdown responsive.
     ser = serial.Serial(args.port, args.baud, timeout=0.005)
 
-    # Give the port a moment to settle, then remove old queued data so the viewer starts live.
-    #time.sleep(0.2)
+    # Discard queued data so the viewer starts with current frames.
     ser.reset_input_buffer()
     ser.reset_output_buffer()
 
@@ -522,7 +408,6 @@ def main():
     )
     reader.start()
 
-    # FPS / stats measurement
     display_counter = 0
     stats_t0 = time.perf_counter()
     current_display_fps = 0.0
@@ -531,7 +416,7 @@ def main():
     last_displayed_counter = None
     display_skipped_frames = 0
 
-    # Baseline is stored in the original STM32 orientation: 32 columns x 12 rows.
+    # Store the baseline in STM32 orientation (32 columns x 12 rows).
     baseline_matrix = None
     baseline_samples = []
     collecting_baseline = not args.no_baseline
@@ -549,14 +434,13 @@ def main():
                 counter = state["counter"]
                 matrix = None if state["matrix"] is None else state["matrix"].copy()
 
-            # No complete frame has arrived yet.
             if matrix is None:
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord("q"):
                     break
                 continue
 
-            # Do not redraw the same frame over and over if display loop is faster than serial.
+            # Avoid redrawing unchanged frames when display polling is faster than acquisition.
             if counter == last_displayed_counter:
                 if args.no_display:
                     time.sleep(0.001)
@@ -566,7 +450,7 @@ def main():
                         break
                 continue
 
-            # Count frames skipped by the display because a newer frame replaced old ones.
+            # Measure counter gaps between displayed frames, including uint32 wraparound.
             if last_displayed_counter is not None:
                 expected = (last_displayed_counter + 1) & 0xFFFFFFFF
                 if counter != expected:
@@ -575,8 +459,7 @@ def main():
             last_displayed_counter = counter
             display_counter += 1
 
-            # Capture a robust taxel-wise baseline. Cast to float before storing
-            # so later subtraction cannot wrap around as unsigned integers.
+            # Use a per-taxel median baseline; float samples prevent unsigned subtraction wrap.
             if collecting_baseline:
                 baseline_samples.append(matrix.astype(np.float32))
 
@@ -595,7 +478,6 @@ def main():
                         "Displaying baseline-subtracted response."
                     )
 
-            # Print stats once per second.
             now = time.perf_counter()
             elapsed = now - stats_t0
 
@@ -667,7 +549,6 @@ def main():
                             show_header=args.show_header,
                         )
 
-                        # 1) Baseline-subtracted and thresholded contact response.
                         processed_img = matrix_to_image(
                             **common_kwargs,
                             baseline_matrix=baseline_matrix,
@@ -677,7 +558,6 @@ def main():
                             display_threshold=args.display_threshold,
                         )
 
-                        # 2) Raw ADC values with the focused 1900..4050-style range.
                         raw_focused_img = matrix_to_image(
                             **common_kwargs,
                             baseline_matrix=None,
@@ -687,7 +567,7 @@ def main():
                             display_threshold=args.display_threshold,
                         )
 
-                        # 3) Raw ADC values over the complete 12-bit range.
+                        # Retain a full 12-bit view alongside the configured display ranges.
                         raw_full_img = matrix_to_image(
                             **common_kwargs,
                             baseline_matrix=None,
@@ -761,7 +641,7 @@ def main():
                 elif key == ord("q"):
                     break
             else:
-                # In no-display mode, let the reader thread do the work and avoid a CPU spin loop.
+                # Yield to the reader thread instead of busy-waiting.
                 time.sleep(0.001)
 
     except KeyboardInterrupt:

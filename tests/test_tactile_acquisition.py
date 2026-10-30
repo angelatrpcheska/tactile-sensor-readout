@@ -13,7 +13,7 @@ import check_tactile_noise as noise
 
 
 def bitwise_crc_reference(data):
-    """Independent, original CRC16-CCITT-FALSE bit-by-bit reference."""
+    """Bitwise CRC-16/CCITT-FALSE reference independent of the production code."""
     value = 0xFFFF
     for byte in data:
         value ^= byte << 8
@@ -383,8 +383,7 @@ class ContinuousReceiverTests(unittest.TestCase):
         original_wait = threading.Condition.wait
 
         def observe_boundary_wait(condition, timeout=None):
-            # Observe the start request's actual wait for the worker's boundary
-            # acknowledgement, rather than relying on a scheduling delay.
+            # Observe the boundary wait without relying on thread scheduling.
             if threading.current_thread() is starter:
                 start_waiting.set()
             return original_wait(condition, timeout)

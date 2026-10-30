@@ -1,25 +1,24 @@
 #!/usr/bin/env python3
-"""Reference-based IoU/Dice for 10-trial tactile_mold_experiment recordings.
+"""Calculate reference-based IoU/Dice for saved tactile_mold_experiment trials.
 
-Uses the *same built-in geometry and rasterization rule* as the user's former
-calculate_iou_dice.py, but reads measured binary masks from measurements.npz
-instead of attempting to reconstruct masks from PNG colours.
+Use the geometry and rasterization rule from analysis/calculate_iou_dice.py,
+with measured binary masks read directly from measurements.npz.
 
-Examples:
+Examples from the repository root:
   python3 analysis/calculate_iou_dice_thesis.py \
-      --data three_stripe_200g_20261022_170808.zip \
+      --data session.zip \
       --out thesis_reference_results
 
-  # PREFERRED if the exact independently defined 66-taxel ERK mask is available:
+  # Prefer the independent 66-taxel ERK reference when available.
   python3 analysis/calculate_iou_dice_thesis.py \
-      --data three_stripe_200g_20261022_170808.zip \
+      --data session.zip \
       --reference dxf_reference_12x32.npy \
       --out thesis_reference_ERK_results
 
-IMPORTANT: Do not tune reference shifts, width, or overlap to maximize IoU on
-these recorded trials. They should reflect independent physical geometry and
-sensor/mold alignment. The built-in defaults produce 60 taxels, NOT the 66
-reference taxels reported for the earlier ERK experiment.
+Set reference shifts, width, and overlap from independent physical geometry
+and sensor/mold alignment; do not optimize them on the evaluation trials.
+The built-in defaults produce 60 taxels, versus the 66 reference taxels
+reported for the earlier ERK experiment.
 """
 from __future__ import annotations
 import argparse
@@ -37,7 +36,8 @@ MOLD_WIDTH_MM, MOLD_HEIGHT_MM = 65.0, 26.0
 ACTIVE_WIDTH_MM, ACTIVE_HEIGHT_MM = 64.0, 24.0
 ORIGIN_X_MM = (MOLD_WIDTH_MM - ACTIVE_WIDTH_MM)/2.0
 ORIGIN_Y_MM = (MOLD_HEIGHT_MM - ACTIVE_HEIGHT_MM)/2.0
-# Exactly as in calculate_iou_dice(1).py (CAD-derived centre lines, not DXF polygons)
+# CAD centre lines from calculate_iou_dice.py, not DXF polygons; coordinates
+# are in millimetres from the mold's top-left corner.
 LINES_MM = (
     ((8.3578643763, 6.63603896935), (21.0857864377, 19.36396103070)),
     ((26.1360389694, 6.63603896935), (38.8639610307, 19.36396103070)),
@@ -46,6 +46,7 @@ LINES_MM = (
 
 
 def make_geometry_mask(width: float=4.0, overlap: float=0.25, subn: int=40):
+    """Rasterize flat-ended stripes using sub-taxel centre coverage samples."""
     if width <= 0 or not 0 <= overlap <= 1 or subn < 2:
         raise ValueError('Check stripe width (>0), overlap (0..1), supersampling (>=2)')
     sub=(np.arange(subn,dtype=np.float64)+0.5)/subn
@@ -96,6 +97,7 @@ def load_ref(path: Path):
 
 
 def transform(ref, flip_ud=False, flip_lr=False, row_shift=0, col_shift=0):
+    """Flip the reference, then shift without wraparound; exposed cells are zero."""
     if flip_ud: ref=np.flipud(ref)
     if flip_lr: ref=np.fliplr(ref)
     if row_shift==0 and col_shift==0: return ref

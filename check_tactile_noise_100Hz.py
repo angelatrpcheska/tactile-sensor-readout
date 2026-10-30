@@ -1,37 +1,21 @@
 #!/usr/bin/env python3
-"""
-check_tactile_noise_threaded_100Hz.py
-
-Threaded tactile sensor noise / signal characterization for the simplified
-100 Hz initial firmware profile.
+"""Measure tactile sensor noise and contact response for the legacy 100 Hz firmware.
 
 Expected packet format:
     AA 55 + uint32 frame_counter + 384 unsigned 16-bit ADC values
     No CRC.
 
-The script does not set the STM32 frame rate. The firmware must be configured
-with the desired frame period, for example:
+Configure the frame rate in STM32 firmware; this script does not set it.
+For example:
     TARGET_FRAME_PERIOD_US = 10000U
 
-The threaded reader continuously drains the serial stream into a queue, so the
-OS serial buffer does not accumulate old frames during the timed measurement.
-Unlike the live viewer, this script keeps every received frame unless the queue
-overflows.
+The background reader drains the serial stream into a queue to avoid an OS
+buffer backlog. It retains every valid frame unless the queue overflows,
+whereas the live viewer selects the latest frame.
 
 Typical runs:
-    python3 check_tactile_noise_threaded_100Hz.py \
-        --port /dev/cu.usbmodem2078388A45461 \ 
-        --baseline_sec 30 \
-        --skip_touch \
-        --trial_name no_touch_100Hz \
-        --out_root thesis_noise
-
-    python3 check_tactile_noise_threaded_100Hz.py \
-        --port /dev/cu.usbmodem2078388A45461 \
-        --baseline_sec 15 \
-        --touch_sec 10 \
-        --trial_name contact_100Hz \
-        --out_root thesis_noise
+    python check_tactile_noise_100Hz.py --port /dev/cu.usbmodemXXXX --baseline_sec 30 --skip_touch --trial_name no_touch_100Hz --out_root thesis_noise
+    python check_tactile_noise_100Hz.py --port /dev/cu.usbmodemXXXX --baseline_sec 15 --touch_sec 10 --trial_name contact_100Hz --out_root thesis_noise
 """
 
 import argparse
@@ -261,10 +245,7 @@ def threaded_reader_worker(
     stop_event: threading.Event,
     thread_stats: Dict[str, int],
 ) -> None:
-    """
-    Continuously read every valid frame and put it in a queue.
-    This prevents serial-buffer buildup during measurements.
-    """
+    """Drain valid frames into the queue and count drops when it is full."""
     while not stop_event.is_set():
         try:
             frame, counter = reader.read_frame()
@@ -305,9 +286,9 @@ def capture_frames_threaded(
     duration_s: float,
     thread_stats: Dict[str, int],
 ) -> Tuple[np.ndarray, float, Dict[str, Any]]:
-    """
-    Capture frames from the background-reader queue for a fixed duration.
-    Frames already in the queue before t0 are ignored.
+    """Capture queued frames for a fixed duration.
+
+    Frames timestamped before the capture starts are ignored.
     """
     frames = []
     counters = []
@@ -375,7 +356,7 @@ def save_heatmap_png(
     vmin: Optional[float] = None,
     vmax: Optional[float] = None,
 ) -> None:
-    """Save a heatmap. If vmin/vmax are given, the color scale is fixed."""
+    """Save a heatmap with an optional fixed color scale."""
     arr = np.asarray(data, dtype=np.float32)
 
     try:

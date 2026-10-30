@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
 """Make a four-panel thesis figure from an existing tactile contact experiment.
 
-No new acquisition. Uses original stored delta and a saved 12x32 reference PNG.
+Use stored delta values and a saved 12x32 reference PNG; no new acquisition.
 
-Example:
+Example from the repository root:
     python3 analysis/plot_contact_thesis.py \
-        --results 'three_stripe_200g_20261022_170808.zip' \
-        --reference 'reference_mask(2).png' \
+        --results 'session.zip' \
+        --reference 'reference_mask.png' \
         --trial 4 --threshold 500 \
         --output 'primerjava_kontaktnega_odziva'
-
-Dependencies: numpy, matplotlib, pillow.
 """
 import argparse
 import io
@@ -27,7 +25,7 @@ from PIL import Image
 
 
 def load_reference(path: Path) -> np.ndarray:
-    # The provided reference PNG encodes a 12x32 binary grid using white pixels.
+    # White cell centres encode active taxels in a uniformly scaled 12x32 grid.
     rgb = np.asarray(Image.open(path).convert('RGB'))
     height, width = rgb.shape[:2]
     if height % 12 or width % 32 or height // 12 != width // 32:
@@ -61,7 +59,7 @@ def load_delta(results: Path, trial: int) -> np.ndarray:
 
 
 def configure_grid(ax, left=False):
-    # Extent and aspect guarantee physically square cells, even in PDF.
+    # Equal aspect preserves square taxels in both output formats.
     ax.set_xlim(0.5, 32.5)
     ax.set_ylim(12.5, 0.5)
     ax.set_aspect('equal')
@@ -139,8 +137,7 @@ def plot(ref, delta, threshold, trial, output):
         Patch(facecolor='#ed5149', label=f'FP = {fp}'),
         Patch(facecolor='#4197e4', label=f'FN = {fn}'),
     ]
-    # Keep TP/FP/FN labels outside panel (d), aligned vertically on its right.
-    # This avoids covering the measured taxels and leaves the lower margin clean.
+    # Place TP/FP/FN labels outside panel (d) to avoid obscuring taxels.
     axes[3].legend(handles=legend_handles, loc='center left',
                    bbox_to_anchor=(1.025, 0.5), ncol=1, frameon=False,
                    borderaxespad=0, labelspacing=0.8,

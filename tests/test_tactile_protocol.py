@@ -1,9 +1,7 @@
-"""Pytest exercises for the STM32 tactile sensor's binary USB protocol.
+"""Test the STM32 binary protocol with simulated serial input; no hardware required.
 
-run:
+Run from the repository root:
     python -m pytest -v tests/test_tactile_protocol.py
-
-All tests use simulated serial data: no STM32 or sensor is needed.
 """
 
 import struct
@@ -16,7 +14,7 @@ import read_tactile_threaded as reader
 
 
 class FakeSerial:
-    """Small fake of the pyserial interface used by the reader."""
+    """Minimal pyserial interface for buffered reader tests."""
 
     def __init__(self, data=b""):
         self.buffer = bytearray(data)
@@ -35,7 +33,7 @@ class FakeSerial:
 
 
 def make_packet(counter, values):
-    """Make a valid STM32-style packet to feed into the real Python parser."""
+    """Encode a valid STM32 packet for parser tests."""
     values = np.asarray(values, dtype=np.uint16)
     assert values.shape == (reader.NUM_VALUES,)
     assert np.all(values <= 4095)
@@ -112,7 +110,7 @@ def test_valid_frame_has_correct_counter_shape_and_orientation():
 
 def test_corrupted_packet_is_skipped_and_next_one_recovers():
     bad = bytearray(make_packet(7, np.zeros(reader.NUM_VALUES, dtype=np.uint16)))
-    bad[10] ^= 0x01  # flip one payload bit WITHOUT updating the CRC
+    bad[10] ^= 0x01  # Corrupt the payload without updating the CRC.
     good_values = np.full(reader.NUM_VALUES, 1234, dtype=np.uint16)
     serial_port = FakeSerial(bytes(bad) + make_packet(8, good_values))
 
@@ -172,7 +170,7 @@ def test_reader_discards_garbage_before_sync():
 )
 def test_counter_tracking(monkeypatch, counters, expected_skips):
 
-    # Create a fake sensor matrix
+    # Firmware orientation: columns x rows.
     sample = np.full((32, 12), 1950, dtype=np.uint16)
 
     # Simulate frame counters arriving one at a time
@@ -188,14 +186,12 @@ def test_counter_tracking(monkeypatch, counters, expected_skips):
 
         return counter, sample, 1
 
-    # Replace the real packet-reading function
     monkeypatch.setattr(
         reader,
         "read_latest_available_frame",
         fake_read_latest_frame
     )
 
-    # Initialize the same state as your real reader
     state = {
         "counter": None,
         "matrix": None,
@@ -204,7 +200,6 @@ def test_counter_tracking(monkeypatch, counters, expected_skips):
         "stm32_counter_skips": 0
     }
 
-    # Execute the real counter-tracking logic
     reader.serial_reader_thread(
         None,
         state,
@@ -212,7 +207,6 @@ def test_counter_tracking(monkeypatch, counters, expected_skips):
         stop_event
     )
 
-    # Verify expected results
     assert state["counter"] == counters[-1]
     assert state["received_frames"] == len(counters)
     assert state["reader_dropped_frames"] == 0

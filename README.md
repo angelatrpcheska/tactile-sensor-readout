@@ -2,7 +2,7 @@
 
 Python software for acquiring and displaying a 12×32 tactile sensor over USB
 serial, measuring noise and contact response, and analyzing saved thesis trials.
-Acquisition, visualization, and mold experiment scripts remain in the repository
+Acquisition, visualization, and mold experiment scripts are in the repository
 root; offline analysis scripts live in `analysis/`. Run the commands below from
 the repository root.
 
@@ -114,10 +114,9 @@ python analysis/plot_contact_thesis.py --results thesis_experiments/SESSION \
   --output thesis_experiments/figures/contact_comparison
 ```
 
-`calculate_iou_dice.py` still defaults to the repository-root
+`calculate_iou_dice.py` defaults to the repository-root
 `tactile_snapshots_iou/`, independently of the working directory. Other relative
-input and output paths retain their working-directory behavior. No measurement
-directories or existing figures have moved. Use, for example,
+input and output paths resolve from the working directory. Use
 `python analysis/plot_contact_thesis.py --help` to inspect a script's options.
 
 ## Local data and public-release review
@@ -129,4 +128,9 @@ for tracking. Custom output directories should be placed under an ignored output
 directory, particularly when producing JSON or other unrestricted file types.
 Ignore rules do not remove files already tracked or erase Git history.
 
-The reference mask used for the earlier IoU/Dice evaluation (`stripe_mask_4mm_binary_25pct.npy`, 66 active taxels) is retained separately and is not distributed with this repository. Analysis scripts accept external reference masks through command-line arguments. Reproducing the original results requires the corresponding reference mask; the current generated default differs from it.
+The reference mask used for the earlier IoU/Dice evaluation
+(`stripe_mask_4mm_binary_25pct.npy`, 66 active taxels) is retained separately and
+is not distributed with this repository. Analysis scripts accept external
+reference masks through command-line arguments. Reproducing the original results
+requires the corresponding reference mask; the current generated default differs
+from it.
