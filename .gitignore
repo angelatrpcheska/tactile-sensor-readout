@@ -4,6 +4,10 @@ __pycache__/
 .venv/
 venv/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
 # Measurement output directories
 noise_test_*/
@@ -12,17 +16,59 @@ tactile_snapshots_iou/
 tactile_snapshots/
 iou_dice_results/
 thesis_experiments/
+/data/
+/recordings/
+/results/
+/plots/
+/figures/
+/outputs/
+*_results/
 
-# Measurement data
+# Measurement arrays, tables, and generated reports
+*.npy
 *.npz
 *.csv
+*.tsv
+*.bin
+*.raw
+*.h5
+*.hdf5
 *.txt
+!requirements*.txt
+!README*.txt
+*_summary.json
+session_config.json
+
 
 # Generated plots and images
 *.png
 *.jpg
 *.jpeg
 *.svg
+*.pdf
+*.eps
+*.bmp
+*.tif
+*.tiff
+*.gif
+*.webp
+
+# Recordings and measurement archives
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.webm
+*.wav
+*.zip
+*.tar
+*.tar.*
+*.tgz
+*.gz
+*.bz2
+*.xz
+*.7z
+*.rar
 
 # Logs and temporary files
 *.log
@@ -32,6 +78,8 @@ thesis_experiments/
 .env
 .env.*
 !.env.example
+*.local.*
+.aws/
 
 # macOS / editor
 .DS_Store

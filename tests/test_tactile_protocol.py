@@ -1,7 +1,7 @@
 """Pytest exercises for the STM32 tactile sensor's binary USB protocol.
 
 run:
-    python -m pytest -v test_tactile_protocol.py
+    python -m pytest -v tests/test_tactile_protocol.py
 
 All tests use simulated serial data: no STM32 or sensor is needed.
 """
