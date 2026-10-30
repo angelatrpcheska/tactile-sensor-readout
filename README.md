@@ -8,8 +8,9 @@ Source scripts currently run directly from the repository root.
 
 The local baseline on 2026-10-30 uses Python 3.14.0 and pytest 9.2.0.
 All 13 installed runtime dependency versions match [requirements.txt](requirements.txt),
-which retains its existing exact pins. Pytest is installed separately and is not
-listed in that file. A fresh installation on another platform has not been verified.
+which retains its existing exact pins. [requirements-dev.txt](requirements-dev.txt)
+includes those runtime requirements and pins pytest and its test-only dependencies.
+A fresh installation on another platform has not been verified.
 
 | Distribution | Import | Used for |
 | --- | --- | --- |
@@ -24,8 +25,7 @@ To create an equivalent environment, run from the repository root:
 ```sh
 python3.14 -m venv .venv
 source .venv/bin/activate
-python -m pip install -r requirements.txt
-python -m pip install pytest==9.2.0
+python -m pip install -r requirements-dev.txt
 ```
 
 ## Import paths and tests
@@ -41,12 +41,20 @@ With the environment activated, run these commands from the repository root so
 the root modules remain importable:
 
 ```sh
-python -m pytest -q tests
+python -m pip check
+python -m pytest -q tests/
 python -m pytest -v tests/test_tactile_protocol.py
 ```
 
 The baseline suite passes all 42 tests and 8 subtests using simulated serial
 input. It does not require a sensor or verify hardware operation.
+
+The [Tests workflow](.github/workflows/tests.yml) runs on pushes, pull requests,
+and manual dispatch from GitHub Actions. It uses Ubuntu and Python 3.14 to install
+`requirements-dev.txt`, run `python -m pip check`, and execute
+`python -m pytest -q tests/`. The job has read-only repository permissions and a
+10-minute timeout. Tests run without a graphical desktop, STM32 hardware, a serial
+port, or private measurement data.
 
 ## Sensor commands
 
