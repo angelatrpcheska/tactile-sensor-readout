@@ -1,98 +1,104 @@
 # Tactile sensor readout
 
-Python software for acquiring and displaying a 12×32 tactile sensor over USB
-serial, measuring noise and contact response, and analyzing saved thesis trials.
-Acquisition, visualization, and mold experiment scripts are in the repository
-root; offline analysis scripts live in `analysis/`. Run the commands below from
-the repository root.
+Acquisition, visualization, and analysis software for a **12 × 32 flexible
+piezoresistive tactile sensor** with 384 sensing elements (taxels). A custom
+STM32 readout system streams ADC samples and frame counters to the host over
+USB serial. The software displays contact patterns and records measurements
+for sensor characterization and contact experiments.
 
-## Existing environment and dependencies
+This repository contains the host-side Python software. STM32 firmware is not
+included.
 
-The local baseline on 2026-10-30 uses Python 3.14.0 and pytest 9.2.0.
-All 13 installed runtime dependency versions match [requirements.txt](requirements.txt),
-which retains its existing exact pins. [requirements-dev.txt](requirements-dev.txt)
-includes those runtime requirements and pins pytest and its test-only dependencies.
-A fresh installation on another platform has not been verified.
+## Features
 
-| Distribution | Import | Used for |
-| --- | --- | --- |
-| `numpy` | `numpy` | Arrays, decoding, and numerical analysis |
-| `pyserial` | `serial` | Sensor USB serial connection |
-| `opencv-python` | `cv2` | Live viewer, snapshots, and some reference-image loading |
-| `matplotlib` | `matplotlib` | Measurement and thesis figures |
-| `pillow` | `PIL` | Reference images and snapshot analysis |
+- Real-time heatmaps with baseline subtraction, snapshots, and frame diagnostics.
+- Noise, drift, saturation, and contact-signal measurements in ADC counts.
+- Repeated mold experiments with baseline, contact, and recovery recordings.
+- Offline IoU/Dice evaluation, threshold sensitivity analysis, and thesis figures.
 
-To create an equivalent environment, run from the repository root:
+## Repository structure
+
+```text
+.
+├── read_tactile_threaded.py          # Current live viewer
+├── read_tactile_threaded_100Hz.py     # Legacy live viewer
+├── check_tactile_noise.py            # Current measurement receiver
+├── check_tactile_noise_100Hz.py       # Legacy measurement receiver
+├── tactile_mold_experiment.py        # Repeated contact experiments
+├── analysis/
+│   ├── calculate_iou_dice.py         # Snapshot-based evaluation
+│   ├── calculate_iou_dice_thesis.py  # Numerical trial evaluation
+│   ├── analyze_threshold_sensitivity.py
+│   ├── plot_tactile_results.py
+│   └── plot_contact_thesis.py
+├── tests/
+│   ├── test_tactile_protocol.py
+│   └── test_tactile_acquisition.py
+├── requirements.txt                 # Runtime dependencies
+├── requirements-dev.txt             # Runtime + testing dependencies
+└── .github/workflows/tests.yml
+```
+
+## Installation
+
+Tested with Python 3.14.0. Compatibility with other Python versions has not yet been verified. Run commands from
+the repository root:
 
 ```sh
 python3.14 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements-dev.txt
-```
-
-## Import paths and tests
-
-Keep the root scripts together. `tests/test_tactile_protocol.py` imports
-`read_tactile_threaded`; `tests/test_tactile_acquisition.py` imports
-`check_tactile_noise`. The mold experiment also imports `check_tactile_noise`
-for `TactilePacketReader`, `ContinuousReceiver`, `discard_fresh_frames`,
-`capture_frames`, and `json_safe`. The viewer imports `cv2` even during
-hardware-free protocol testing.
-
-With the environment activated, run these commands from the repository root so
-the root modules remain importable:
-
-```sh
 python -m pip check
-python -m pytest -q tests/
-python -m pytest -v tests/test_tactile_protocol.py
 ```
 
-The baseline suite passes all 42 tests and 8 subtests using simulated serial
-input. It does not require a sensor or verify hardware operation.
+For runtime dependencies only, install `requirements.txt` instead. Dependencies
+include NumPy, pyserial, OpenCV, Matplotlib, and Pillow.
 
-The [Tests workflow](.github/workflows/tests.yml) runs on pushes, pull requests,
-and manual dispatch from GitHub Actions. It uses Ubuntu and Python 3.14 to install
-`requirements-dev.txt`, run `python -m pip check`, and execute
-`python -m pytest -q tests/`. The job has read-only repository permissions and a
-10-minute timeout. Tests run without a graphical desktop, STM32 hardware, a serial
-port, or private measurement data.
+## Firmware compatibility
 
-## Sensor commands
+Both protocols begin with `AA 55` and a 32-bit frame counter.
 
-Replace `PORT` with the connected device's serial port. A matching STM32 firmware
-profile is required; the Python scripts do not configure its frame rate.
-
-| Firmware profile | Packet | Viewer | Noise measurement |
+| Profile | ADC payload | Integrity check | Frame size |
 | --- | --- | --- | --- |
-| Current | Packed 12-bit samples with CRC16-CCITT-FALSE; 584 bytes | `read_tactile_threaded.py` | `check_tactile_noise.py` |
-| Older 100 Hz | Little-endian uint16 samples without CRC; 774 bytes | `read_tactile_threaded_100Hz.py` | `check_tactile_noise_100Hz.py` |
+| Current | 384 packed 12-bit samples | CRC-16/CCITT-FALSE over counter and payload | 584 bytes |
+| Legacy 100 Hz | 384 little-endian uint16 samples | No CRC | 774 bytes |
+
+Use the script matching the device firmware. The `_100Hz.py` scripts support
+the legacy profile; Python does not configure the firmware frame rate.
+
+## Sensor usage
+
+Replace `PORT` with the device's serial port, such as `/dev/ttyACM0`,
+`/dev/cu.usbmodem…`, or `COM3`.
 
 ```sh
+# Current firmware
 python read_tactile_threaded.py --port PORT
-python read_tactile_threaded_100Hz.py --port PORT
-
 python check_tactile_noise.py --port PORT --skip_touch --out_root thesis_noise
+
+# Legacy firmware
+python read_tactile_threaded_100Hz.py --port PORT
 python check_tactile_noise_100Hz.py --port PORT --skip_touch --out_root thesis_noise
 
-python tactile_mold_experiment.py --port PORT --mold_id three_stripe --load_g 200
+# Example contact experiment using current firmware
+python tactile_mold_experiment.py --port PORT \
+  --mold_id three_stripe --load_g 200 --repeats 1
 ```
 
-The mold identifier and 200 g load above are example metadata; supply the actual
-mold and applied mass. The experiment uses the current packed12+CRC profile and
-prompts for baseline, contact, and recovery states. Noise scripts also prompt
-before capture; omit `--skip_touch` to include contact measurement.
+Keep the sensor unloaded while the viewer captures its baseline. Noise commands
+above record a no-touch baseline; omit `--skip_touch` to include contact recording.
+Mold experiments prompt for each baseline, contact, and recovery state. Supply
+the actual mold identifier and applied mass; `--load_g` records grams, not
+calibrated force. Capture windows describe steady states, not load-onset timing.
 
-Viewers retain the newest frame for live display. Their snapshots default to
-`tactile_snapshots_iou/`; mold recordings default to `thesis_experiments/`.
-Relative output paths resolve from the working directory. Run any script with
-`--help` to inspect its existing options and defaults.
+Viewers retain the newest frame for responsive display; measurement receivers
+retain frames for analysis and report acquisition diagnostics. Snapshots default
+to `tactile_snapshots_iou/`, and mold recordings to `thesis_experiments/`.
 
-## Offline analysis commands
+## Offline analysis
 
-Use existing local recordings for `SESSION` and `RUN`, and supply your independent
-reference mask where indicated. Trial analysis accepts either an extracted
-session directory or a ZIP archive. These commands do not acquire new sensor data.
+Replace `SESSION`, `RUN`, and reference paths with existing local inputs.
+Trial analysis accepts an extracted session directory or a ZIP archive.
 
 ```sh
 python analysis/calculate_iou_dice.py --root tactile_snapshots_iou \
@@ -110,27 +116,35 @@ python analysis/plot_tactile_results.py thesis_noise/RUN/noise_results.npz \
   --all --timeseries
 
 python analysis/plot_contact_thesis.py --results thesis_experiments/SESSION \
-  --reference /path/to/reference.png --trial 4 \
+  --reference /path/to/reference.png --trial 1 \
   --output thesis_experiments/figures/contact_comparison
 ```
 
-`calculate_iou_dice.py` defaults to the repository-root
-`tactile_snapshots_iou/`, independently of the working directory. Other relative
-input and output paths resolve from the working directory. Use
-`python analysis/plot_contact_thesis.py --help` to inspect a script's options.
+Choose a recorded trial for `--trial`. Relative input and output paths resolve
+from the working directory; the snapshot evaluator's default root remains the
+repository's `tactile_snapshots_iou/`. Run any script with `--help` for its options.
 
-## Local data and public-release review
+## Automated tests
 
-Measurement directories, numerical recordings, generated reports and figures,
-archives, caches, and local configuration are excluded by `.gitignore`.
-Python source, tests, README files, and `requirements*.txt` files remain eligible
-for tracking. Custom output directories should be placed under an ignored output
-directory, particularly when producing JSON or other unrestricted file types.
-Ignore rules do not remove files already tracked or erase Git history.
+```sh
+python -m pytest -q tests/
+```
 
-The reference mask used for the earlier IoU/Dice evaluation
-(`stripe_mask_4mm_binary_25pct.npy`, 66 active taxels) is retained separately and
-is not distributed with this repository. Analysis scripts accept external
-reference masks through command-line arguments. Reproducing the original results
-requires the corresponding reference mask; the current generated default differs
-from it.
+The suite contains **42 tests and 8 subtests** covering packet decoding, CRC,
+orientation, corruption recovery, buffering, frame counters, capture boundaries,
+deadlines, and receiver shutdown. Tests use simulated serial input and need no
+STM32 hardware, serial port, private data, or graphical desktop. They do not
+validate physical sensor performance.
+
+[GitHub Actions](.github/workflows/tests.yml) runs on pushes, pull requests, and
+manual dispatch using Ubuntu 24.04 and Python 3.14. It installs development
+dependencies, runs `python -m pip check`, and executes the test command above,
+with read-only repository permissions and a 10-minute timeout.
+
+## Experimental data
+
+Experimental recordings, generated figures, and original reference data are not
+distributed. Reproducing reported metrics requires the corresponding recordings
+and independently aligned reference mask. The earlier evaluation used a
+66-taxel reference; the current built-in geometric default produces 60 taxels
+and is not an equivalent replacement.
