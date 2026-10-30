@@ -4,7 +4,7 @@
 No new acquisition. Uses original stored delta and a saved 12x32 reference PNG.
 
 Example:
-    python3 plot_contact_thesis_4panel.py \
+    python3 analysis/plot_contact_thesis.py \
         --results 'three_stripe_200g_20261022_170808.zip' \
         --reference 'reference_mask(2).png' \
         --trial 4 --threshold 500 \

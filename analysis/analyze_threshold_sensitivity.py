@@ -6,7 +6,7 @@ specified 12x32 binary reference mask. NEVER recalibrates the reference
 alignment or chooses an "optimal" threshold on the evaluation trials.
 
 Usage from tactile-sensor-readout/:
-    python3 analyze_threshold_sensitivity.py \
+    python3 analysis/analyze_threshold_sensitivity.py \
       --data "thesis_experiments/three_stripe_200g_20261022_170808" \
       --reference "reference_mask.png" \
       --out "thesis_experiments/three_stripe_threshold_analysis"

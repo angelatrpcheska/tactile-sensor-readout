@@ -2,7 +2,9 @@
 
 Python software for acquiring and displaying a 12×32 tactile sensor over USB
 serial, measuring noise and contact response, and analyzing saved thesis trials.
-Source scripts currently run directly from the repository root.
+Acquisition, visualization, and mold experiment scripts remain in the repository
+root; offline analysis scripts live in `analysis/`. Run the commands below from
+the repository root.
 
 ## Existing environment and dependencies
 
@@ -85,6 +87,38 @@ Viewers retain the newest frame for live display. Their snapshots default to
 `tactile_snapshots_iou/`; mold recordings default to `thesis_experiments/`.
 Relative output paths resolve from the working directory. Run any script with
 `--help` to inspect its existing options and defaults.
+
+## Offline analysis commands
+
+Use existing local recordings for `SESSION` and `RUN`, and supply your independent
+reference mask where indicated. Trial analysis accepts either an extracted
+session directory or a ZIP archive. These commands do not acquire new sensor data.
+
+```sh
+python analysis/calculate_iou_dice.py --root tactile_snapshots_iou \
+  --reference-mask /path/to/reference.npy
+
+python analysis/calculate_iou_dice_thesis.py \
+  --data thesis_experiments/SESSION --reference /path/to/reference.npy \
+  --out thesis_experiments/SESSION_reference_results
+
+python analysis/analyze_threshold_sensitivity.py \
+  --data thesis_experiments/SESSION --reference /path/to/reference.npy \
+  --out thesis_experiments/SESSION_threshold_analysis
+
+python analysis/plot_tactile_results.py thesis_noise/RUN/noise_results.npz \
+  --all --timeseries
+
+python analysis/plot_contact_thesis.py --results thesis_experiments/SESSION \
+  --reference /path/to/reference.png --trial 4 \
+  --output thesis_experiments/figures/contact_comparison
+```
+
+`calculate_iou_dice.py` still defaults to the repository-root
+`tactile_snapshots_iou/`, independently of the working directory. Other relative
+input and output paths retain their working-directory behavior. No measurement
+directories or existing figures have moved. Use, for example,
+`python analysis/plot_contact_thesis.py --help` to inspect a script's options.
 
 ## Local data and public-release review
 

@@ -6,12 +6,12 @@ calculate_iou_dice.py, but reads measured binary masks from measurements.npz
 instead of attempting to reconstruct masks from PNG colours.
 
 Examples:
-  python3 calculate_iou_dice_thesis.py \
+  python3 analysis/calculate_iou_dice_thesis.py \
       --data three_stripe_200g_20261022_170808.zip \
       --out thesis_reference_results
 
   # PREFERRED if the exact independently defined 66-taxel ERK mask is available:
-  python3 calculate_iou_dice_thesis.py \
+  python3 analysis/calculate_iou_dice_thesis.py \
       --data three_stripe_200g_20261022_170808.zip \
       --reference dxf_reference_12x32.npy \
       --out thesis_reference_ERK_results

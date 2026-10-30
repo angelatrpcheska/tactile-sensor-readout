@@ -6,7 +6,8 @@ the diagonal triple-stripe mold reference mask.
 Expected folder structure:
 
 project_directory/
-├── calculate_iou_dice.py
+├── analysis/
+│   └── calculate_iou_dice.py
 └── tactile_snapshots_iou/
     ├── 20260720_153402_frame_222569/
     │   └── 01_processed_delta_threshold_500.png
@@ -15,10 +16,10 @@ project_directory/
     └── ...
 
 Run:
-    python3 calculate_iou_dice.py
+    python3 analysis/calculate_iou_dice.py
 
 Or specify another folder:
-    python3 calculate_iou_dice.py --root /path/to/tactile_snapshots_iou
+    python3 analysis/calculate_iou_dice.py --root /path/to/tactile_snapshots_iou
 
 Outputs are written inside tactile_snapshots_iou:
     iou_dice_results.csv
@@ -111,7 +112,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--root",
         type=Path,
-        default=Path(__file__).resolve().parent / "tactile_snapshots_iou",
+        default=Path(__file__).resolve().parent.parent / "tactile_snapshots_iou",
         help="Folder containing the timestamped snapshot subfolders.",
     )
     parser.add_argument(

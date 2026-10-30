@@ -4,9 +4,9 @@
 No serial port, sensor connection, or new acquisition is required.
 
 Examples:
-    python plot_tactile_results.py "/path/to/noise_results.npz" --duration-sec 180
-    python plot_tactile_results.py "/path/to/noise_results.npz" --duration-sec 180 --all --timeseries
-    python plot_tactile_results.py "/path/to/results_folder" --all --no-title
+    python analysis/plot_tactile_results.py "/path/to/noise_results.npz" --duration-sec 180
+    python analysis/plot_tactile_results.py "/path/to/noise_results.npz" --duration-sec 180 --all --timeseries
+    python analysis/plot_tactile_results.py "/path/to/results_folder" --all --no-title
 
 Each figure is saved as both PNG and PDF. Use --font-size to adjust text size.
 
