@@ -14,8 +14,8 @@ buffer backlog. It retains every valid frame unless the queue overflows,
 whereas the live viewer selects the latest frame.
 
 Typical runs:
-    python check_tactile_noise_100Hz.py --port /dev/cu.usbmodemXXXX --baseline_sec 30 --skip_touch --trial_name no_touch_100Hz --out_root thesis_noise
-    python check_tactile_noise_100Hz.py --port /dev/cu.usbmodemXXXX --baseline_sec 15 --touch_sec 10 --trial_name contact_100Hz --out_root thesis_noise
+    python legacy/check_tactile_noise_100Hz.py --port /dev/cu.usbmodemXXXX --baseline_sec 30 --skip_touch --trial_name no_touch_100Hz --out_root thesis_noise
+    python legacy/check_tactile_noise_100Hz.py --port /dev/cu.usbmodemXXXX --baseline_sec 15 --touch_sec 10 --trial_name contact_100Hz --out_root thesis_noise
 """
 
 import argparse

@@ -1,7 +1,7 @@
 """Live viewer for legacy 100 Hz STM32 uint16 ADC frames without CRC.
 
 Run from the repository root:
-    python read_tactile_threaded_100Hz.py --port /dev/ttyACM0
+    python legacy/read_tactile_threaded_100Hz.py --port /dev/ttyACM0
 """
 
 import argparse
