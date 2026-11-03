@@ -15,6 +15,8 @@ included.
 - Noise, drift, saturation, and contact-signal measurements in ADC counts.
 - Repeated mold experiments with baseline, contact, and recovery recordings.
 - Offline IoU/Dice evaluation, threshold sensitivity analysis, and thesis figures.
+- Automated protocol and acquisition tests with simulated serial communication,
+  including recovery from corrupted packets and timeout handling.
 
 ## Repository structure
 
@@ -38,6 +40,7 @@ included.
 │   └── test_tactile_acquisition.py
 ├── requirements.txt                 # Runtime dependencies
 ├── requirements-dev.txt             # Runtime + testing dependencies
+├── LICENSE                          # MIT license
 └── .github/workflows/tests.yml
 ```
 
@@ -109,7 +112,7 @@ Trial analysis accepts an extracted session directory or a ZIP archive.
 
 ```sh
 python analysis/calculate_iou_dice.py --root tactile_snapshots_iou \
-  --reference-mask /path/to/reference.npy
+  --reference-mask /path/to/reference.npy --heatmap-top 0
 
 python analysis/calculate_iou_dice_thesis.py \
   --data thesis_experiments/SESSION --reference /path/to/reference.npy \
@@ -126,6 +129,11 @@ python analysis/plot_contact_thesis.py --results thesis_experiments/SESSION \
   --reference /path/to/reference.png --trial 1 \
   --output thesis_experiments/figures/contact_comparison
 ```
+
+The snapshot example uses `--heatmap-top 0` for the current viewer's default
+headerless snapshots. Snapshots saved with `--show_header` have a 40-pixel header
+and require `--heatmap-top 40`. Check historical snapshots for their actual format
+before analysis; do not assume that a collection uses one format.
 
 Choose a recorded trial for `--trial`. Relative input and output paths resolve
 from the working directory; the snapshot evaluator's default root remains the
@@ -150,8 +158,12 @@ with read-only repository permissions and a 10-minute timeout.
 
 ## Experimental data
 
-Experimental recordings, generated figures, and original reference data are not
-distributed. Reproducing reported metrics requires the corresponding recordings
-and independently aligned reference mask. The earlier evaluation used a
-66-taxel reference; the current built-in geometric default produces 60 taxels
-and is not an equivalent replacement.
+Raw experimental recordings and generated figures are excluded. The original
+66-taxel evaluation reference is absent from the current tracked files but
+remains accessible in Git history. Reproducing reported metrics requires the
+corresponding recordings and original evaluation reference. The built-in
+60-taxel geometric reference is not interchangeable with that reference.
+
+## License
+
+Licensed under the [MIT License](LICENSE).
