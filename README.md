@@ -1,16 +1,19 @@
+
 # Tactile sensor readout
 
 Acquisition, visualization, and analysis software for a **12 × 32 flexible
 piezoresistive tactile sensor** with 384 sensing elements (taxels). A custom
-STM32 readout system streams ADC samples and frame counters to the host over
-USB serial. The software displays contact patterns and records measurements
-for sensor characterization and contact experiments.
+STM32 readout system streams tactile measurements over USB serial at
+approximately **1 kHz**, using packed 12-bit ADC samples and CRC-16 validation.
+The Python software provides real-time contact visualization, measurement
+recording, and offline analysis.
 
 This repository contains the host-side Python software. STM32 firmware is not
 included.
 
 ## Current software features
 
+- High-rate tactile acquisition at **1 kHz**, experimentally validated.
 - Real-time heatmaps with baseline subtraction, snapshots, and frame diagnostics.
 - Noise, drift, saturation, and contact-signal measurements in ADC counts.
 - Repeated mold experiments with baseline, contact, and recovery recordings.
@@ -25,7 +28,7 @@ included.
 ├── read_tactile_threaded.py          # Supported live viewer
 ├── check_tactile_noise.py            # Supported measurement receiver
 ├── tactile_mold_experiment.py        # Supported contact experiments
-├── legacy/                          # Historical archive of the original 100 Hz software
+├── legacy/                           # Archived original 100 Hz software
 │   ├── README.md
 │   ├── read_tactile_threaded_100Hz.py
 │   └── check_tactile_noise_100Hz.py
@@ -46,8 +49,8 @@ included.
 
 ## Installation
 
-Tested with Python 3.14.0. Compatibility with other Python versions has not yet been verified. Run commands from
-the repository root:
+Tested with Python 3.14.0. Compatibility with other Python versions has not
+yet been verified. Run commands from the repository root:
 
 ```sh
 python3.14 -m venv .venv
@@ -68,17 +71,47 @@ Both protocols begin with `AA 55` and a 32-bit frame counter.
 | Current, supported | 384 packed 12-bit samples | CRC-16/CCITT-FALSE over counter and payload | 584 bytes |
 | Original, archived | 384 little-endian uint16 samples | No CRC | 774 bytes |
 
+The current protocol packs two 12-bit ADC samples into three bytes, reducing
+the frame size from 774 to 584 bytes while adding CRC-16 error detection.
+Together with optimized STM32 firmware, this supports acquisition at
+approximately 1 kHz.
+
 The root-level `read_tactile_threaded.py`, `check_tactile_noise.py`, and
 `tactile_mold_experiment.py` are the current supported implementation for the
 584-byte packed-12-bit + CRC protocol. [`legacy/`](legacy/README.md) preserves
 earlier software for historical reference and reproducibility. Its original
 774-byte uint16/no-CRC protocol requires the matching older STM32 firmware.
 
-**Acquisition frequency is controlled by STM32 firmware, not by choosing a
-Python script.** Current firmware transmitting at 100 Hz still uses the current
-584-byte protocol; reducing its frequency does not restore the old protocol.
-Use the root-level scripts with current firmware at its configured rate. The
-archive is not a supported lower-frequency alternative for the current sensor.
+**Acquisition frequency is controlled by the STM32 firmware, not by the Python scripts.** The current firmware operates at approximately 1 kHz using the 584-byte packed-12-bit protocol. The archived 100 Hz scripts require the original STM32 firmware and are incompatible with the current implementation.
+
+### Acquisition performance
+
+A continuous 180-second no-contact measurement with the current firmware
+produced the following results:
+
+| Metric | Measured result |
+| --- | ---: |
+| Recording duration | 180 s |
+| Valid frames captured | 179,995 |
+| Valid frame rate | **999.97 Hz** |
+| Frame-counter discontinuities | 0 |
+| CRC and packet-format errors | 0 |
+| Serial timeouts | 0 |
+| Host valid frames dropped | 0 |
+
+The receiver recorded all expected transmitted frames within the captured
+counter range, with no detected communication errors or frame losses.
+The STM32 frame counter tracks completed scans passed to the transmission
+function and cannot independently detect failed sensor scans.
+
+The measurement receiver records incoming frames for analysis, while the
+real-time viewer prioritizes the newest available frame for responsive
+visualization. GUI refresh rate is therefore lower than the sensor acquisition
+rate.
+
+These results were obtained from a physical sensor measurement and describe
+performance under the tested conditions. The automated tests use simulated
+serial communication and do not independently verify hardware performance.
 
 ## Current sensor usage
 
@@ -158,11 +191,7 @@ with read-only repository permissions and a 10-minute timeout.
 
 ## Experimental data
 
-Raw experimental recordings and generated figures are excluded. The original
-66-taxel evaluation reference is absent from the current tracked files but
-remains accessible in Git history. Reproducing reported metrics requires the
-corresponding recordings and original evaluation reference. The built-in
-60-taxel geometric reference is not interchangeable with that reference.
+Raw experimental recordings and generated figures are excluded.
 
 ## License
 
